@@ -3,6 +3,8 @@
 During my masters I was very fond of the transformer model I learned of during my Deep Learning course. My thesis ended up being about using an LLM (GPT-4 based ChatGPT) to learn about Machine Learning concepts, more specifically, Transformers. 
 Now, I wanted to improve my model, a machine translation transformer, as it was severly lacking in multiple aspects. One of the most important things to focus on was using benchmark datasets with comparable results, which I should have already used previously. 
 Additionally, this project serves as a platform for me to learn agentic coding.
+
+
 This project consists of two stages, which are similar models for the IWSLT17 de-en dataset and IWSLT14 de-en dataset. Both contain german sentences from TED talks translated to english. The reason for the '17 dataset being first is that I was comparing a bilingual model trained on small data to multilingual models on small data. 
 Even though there was some evidence of multilingual models outperforming bilingual models on the few small datasets, which employed both methods, I generally do not wish to generalize based on such a small sample, with it also being on a different language combination dataset. 
 That being said, I have completed the '17 model, which reached the following results:
