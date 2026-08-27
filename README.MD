@@ -48,6 +48,7 @@ Predicted: Long before someone who had heard of Edward Snowden, Risseen a book t
 Reference: Long before anybody knew Edward Snowden's name, Risen wrote a book in which he famously exposed that the NSA was illegally wiretapping the phone calls of Americans.
 ```
 
+As reference, the multilingual models applied on the same small dataset achieved BLEU of 24.75-26.76, NIST of 6.445-6.694 and TER of 54.74-52.43.
 
 Criticisms: 
 
