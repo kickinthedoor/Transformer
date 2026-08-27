@@ -10,13 +10,12 @@ That being said, I have completed the '17 model, which reached the following res
 
 1: Hugging Face provided test set (consisting of test sets 2010-2015)
 
-=== Fine-tuned Model — Translation Benchmark Results ===
-• SacreBLEU Score: 24.16
-• chrF Score:      47.07
-• TER Score:       60.08
-• NIST Score:      6.4209
+- SacreBLEU Score: 24.16
+- chrF Score:      47.07
+- TER Score:       60.08
+- NIST Score:      6.4209
 
---- Generated Sample Comparison ---
+Generated Sample Comparison 
 [1] Predicted: A couple of years ago, at TED, Peter Skillman asked a design competition called "The Marshallow House challenge."
     Reference: Several years ago here at TED, Peter Skillman introduced a design challenge called the marshmallow challenge.
 
@@ -28,13 +27,12 @@ That being said, I have completed the '17 model, which reached the following res
 
 2: Official test set IWSLT17 de-en
 
-=== Fine-tuned Model — Official IWSLT17 (tst2017) Results ===
-• SacreBLEU Score: 18.30
-• chrF Score:      41.69
-• TER Score:       66.19
-• NIST Score:      4.6501
+- SacreBLEU Score: 18.30
+- chrF Score:      41.69
+- TER Score:       66.19
+- NIST Score:      4.6501
 
---- Generated Sample Comparison ---
+Generated Sample Comparison
 [1] Predicted: This is James Risse.
     Reference: So this is James Risen.
 
