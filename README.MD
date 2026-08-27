@@ -49,9 +49,10 @@ Reference: Long before anybody knew Edward Snowden's name, Risen wrote a book in
 
 Criticisms: 
 
-No directly comparable benchmarks. Longer sequences can probably be improved by using relative positional encoding as well as seq-length curriculum. Will be applied for the '14 set.
-Weight decay flattened encoder attention weights to 0, which was corrected by the finetuning, will be taken into account on the '14 set.
-The lower evaluation for the '17 set seems to point at a more difficult test set. To not waste time comparing apples to oranges, I move on to phase 2, which is the directly comparable IWSLT14 de-en, with the planned improvements.
+-No directly comparable benchmarks. 
+-Longer sequences can probably be improved by using relative positional encoding as well as seq-length curriculum. Will be applied for the '14 set.
+-Weight decay flattened encoder attention weights to 0, which was corrected by the finetuning, will be taken into account on the '14 set.
+-The lower evaluation for the '17 set seems to point at a more difficult test set. To not waste time comparing apples to oranges, I move on to phase 2, which is the directly comparable IWSLT14 de-en, with the planned improvements.
 
 ## How to run it
 
