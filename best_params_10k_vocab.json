@@ -1,0 +1,13 @@
+{
+  "study_name": "transformer_tuning_10",
+  "best_value": 3.737765533583505,
+  "best_params": {
+    "d_model": 256,
+    "nhead": 4,
+    "num_encoder_layers": 3,
+    "num_decoder_layers": 4,
+    "dropout": 0.1013563838218435,
+    "weight_decay": 0.00010174227319105348
+  },
+  "best_trial_number": 47
+}

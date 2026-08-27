@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Experiment tracking / tuning artifacts
+wandb/
+*.db
+
+# Data & model artifacts (regenerable / large binaries)
+data/
+cache/
+checkpoints/
+models/
+*.pth
+
+# Virtual environment
+venv/
+
+# Superseded prototype, kept locally but not part of this project's history
+old_prototype/
+
+# Personal working notes, kept locally only — content gets ported into README.MD
+thoughts.txt

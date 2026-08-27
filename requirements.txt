@@ -1,0 +1,20 @@
+# PyTorch is pinned to a CUDA 11.8 build (cu118). The plain PyPI index does not
+# host this build — install it from PyTorch's own index first, e.g.:
+#   pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cu118
+# then install the rest of this file. See https://pytorch.org/get-started/locally/
+# to pick the right CUDA build for a different machine.
+torch==2.3.1
+
+numpy==1.26.4
+sentencepiece==0.2.0
+datasets==2.20.0
+optuna==4.9.0
+wandb==0.26.1
+sacrebleu==2.6.0
+nltk==3.8.1
+matplotlib==3.9.1
+seaborn==0.13.2
+PyYAML==6.0.1
+
+# Needed to run experiment.ipynb as a Jupyter kernel (e.g. in VS Code)
+ipykernel==6.29.5
