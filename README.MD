@@ -50,7 +50,11 @@ Reference: Long before anybody knew Edward Snowden's name, Risen wrote a book in
 
 3: Results by university participants during the IWSLT 2017 Evaluation Campaign
 
-As reference, the multilingual models applied on the same small dataset achieved BLEU of 24.75-26.76, NIST of 6.445-6.694 and TER of 54.74-52.43.
+As reference, the multilingual models applied on the same small dataset achieved: 
+
+- BLEU of 24.75-26.76
+- NIST of 6.445-6.694 
+- TER of 54.74-52.43.
 
 Criticisms: 
 
