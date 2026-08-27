@@ -16,14 +16,14 @@ That being said, I have completed the '17 model, which reached the following res
 - NIST Score:      6.4209
 
 Generated Sample Comparison 
--[1] Predicted: A couple of years ago, at TED, Peter Skillman asked a design competition called "The Marshallow House challenge."
-    Reference: Several years ago here at TED, Peter Skillman introduced a design challenge called the marshmallow challenge.
+> Predicted: A couple of years ago, at TED, Peter Skillman asked a design competition called "The Marshallow House challenge."
+> Reference: Several years ago here at TED, Peter Skillman introduced a design challenge called the marshmallow challenge.
 
--[2] Predicted: The idea is pretty simple. Verteams have to understand the biggest impossible structure with 20 spagetti, about a black band, building about a marsh
-    Reference: And the idea's pretty simple: Teams of four have to build the tallest free-standing structure out of 20 sticks of spaghetti, one yard of tape, one yard of string and a marshmallow.
+> Predicted: The idea is pretty simple. Verteams have to understand the biggest impossible structure with 20 spagetti, about a black band, building about a marsh
+> Reference: And the idea's pretty simple: Teams of four have to build the tallest free-standing structure out of 20 sticks of spaghetti, one yard of tape, one yard of string and a marshmallow.
 
--[3] Predicted: Marshallow has to be up there.
-    Reference: The marshmallow has to be on top.
+> Predicted: Marshallow has to be up there.
+> Reference: The marshmallow has to be on top.
 
 2: Official test set IWSLT17 de-en
 
@@ -33,14 +33,14 @@ Generated Sample Comparison
 - NIST Score:      4.6501
 
 Generated Sample Comparison
--[1] Predicted: This is James Risse.
-    Reference: So this is James Risen.
+> Predicted: This is James Risse.
+> Reference: So this is James Risen.
 
--[2] Predicted: You may know him because he won the New York Times Reporters the Pulzer Price.
-    Reference: You may know him as the Pulitzer Prize-winning reporter for The New York Times.
+> Predicted: You may know him because he won the New York Times Reporters the Pulzer Price.
+> Reference: You may know him as the Pulitzer Prize-winning reporter for The New York Times.
 
--[3] Predicted: Long before someone who had heard of Edward Snowden, Risseen a book that he published in the spectacular, that the NSA is illegal telephone from Americans.
-    Reference: Long before anybody knew Edward Snowden's name, Risen wrote a book in which he famously exposed that the NSA was illegally wiretapping the phone calls of Americans.
+> Predicted: Long before someone who had heard of Edward Snowden, Risseen a book that he published in the spectacular, that the NSA is illegal telephone from Americans.
+> Reference: Long before anybody knew Edward Snowden's name, Risen wrote a book in which he famously exposed that the NSA was illegally wiretapping the phone calls of Americans.
 
 
 
