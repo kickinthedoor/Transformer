@@ -1,0 +1,44 @@
+experiment:
+  name: "transformer_iwslt14_de_en"
+  seed: 42
+  device: "cuda"
+  wandb_project: "iwslt14-de-en-translation"
+  wandb_mode: "online"  # set to "offline" to remove network I/O from the hot loop; run `wandb sync` afterward
+
+training:
+  batch_size: 64
+  gradient_accumulation_steps: 2  # Effective batch size = 128
+  epochs: 20
+  warmup_steps: 4000
+  label_smoothing_eps: 0.1
+  grad_clip_norm: 1.0
+  weight_decay: 0.01
+  eval_every_epochs: 1
+  tune_epochs: 12
+  num_workers: 0
+  log_every_n_steps: 500
+  bpe_dropout_alpha: 0.1  # merge-skip probability for on-the-fly training tokenization
+
+paths:
+  data_dir: "./data_iwslt14"
+  cache_dir: "./cache_iwslt14"
+  src_model_prefix: "models_iwslt14/spm_de"
+  tgt_model_prefix: "models_iwslt14/spm_en"
+  checkpoint_dir: "./checkpoints/de_en_14"
+
+data:
+  src_lang: "de"
+  tgt_lang: "en"
+  vocab_size: 10000
+  character_coverage: 0.9995
+  max_seq_len: 128
+
+model:
+  num_enc_layers: 6
+  num_dec_layers: 6
+  d_model: 512
+  num_heads: 8
+  dff: 2048
+  max_pe_source: 500
+  max_pe_target: 500
+  dropout: 0.1

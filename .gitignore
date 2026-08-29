@@ -15,6 +15,9 @@ cache/
 checkpoints/
 models/
 *.pth
+data_iwslt14/
+cache_iwslt14/
+models_iwslt14/
 
 # Virtual environment
 venv/
