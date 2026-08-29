@@ -31,8 +31,11 @@ def build_objective(train_loader, val_loader, config, device, max_trial_minutes=
         # wouldn't transfer to the final run anyway.
         d_model = trial.suggest_categorical("d_model", [256, 384,512])
         nhead = trial.suggest_categorical("nhead", [2, 4, 8])
-        num_encoder_layers = trial.suggest_int("num_encoder_layers", 2, 6)
-        num_decoder_layers = trial.suggest_int("num_decoder_layers", 2, 6)
+        # Lower bound raised from 2: at this dataset scale, 2-3 layers is very
+        # unlikely to be competitive, and narrowing the range gets more useful
+        # signal out of a fixed trial budget than searching the shallow end.
+        num_encoder_layers = trial.suggest_int("num_encoder_layers", 4, 6)
+        num_decoder_layers = trial.suggest_int("num_decoder_layers", 4, 6)
         dropout = trial.suggest_float("dropout", 0.1, 0.3)
         weight_decay = trial.suggest_float("weight_decay", 1e-4, 5e-2, log=True)
 
@@ -58,7 +61,12 @@ def build_objective(train_loader, val_loader, config, device, max_trial_minutes=
                 num_dec_layers=num_decoder_layers,
                 d_model=d_model,
                 num_heads=nhead,
-                dff=4 * d_model,  # scale with d_model instead of a fixed value, matching standard Transformer ratio
+                # 2x, not the WMT-scale 4x convention — that ratio comes from a
+                # dataset ~100x larger than this one, and is more FFN capacity
+                # than an IWSLT-scale corpus needs. Matches the well-established
+                # reference architecture for this exact benchmark (fairseq's
+                # transformer_iwslt_de_en preset: dff=1024 for d_model=512).
+                dff=2 * d_model,
                 src_vocab=trial_config['data']['vocab_size'],
                 tgt_vocab=trial_config['data']['vocab_size'],
                 max_pe_src=trial_config['model']['max_pe_source'],
@@ -66,11 +74,22 @@ def build_objective(train_loader, val_loader, config, device, max_trial_minutes=
                 rate=dropout
             ).to(device)
 
-            # Mirror the final run's optimizer/schedule exactly (Adam lr=1.0, scaled
-            # by CustomWarmupSchedule) so tuning results transfer to the real thing.
-            optimizer = torch.optim.Adam(
-                model.parameters(), lr=1.0, betas=(0.9, 0.98), eps=1e-9,
-                weight_decay=weight_decay
+            # Mirror the final run's optimizer/schedule exactly (AdamW lr=1.0,
+            # scaled by CustomWarmupSchedule, weight decay excluded from 1D
+            # params) so tuning results transfer to the real thing. Plain Adam's
+            # coupled weight decay is what silently collapsed encoder
+            # self-attention to zero in phase 1 — tuning needs to mirror the
+            # fix, not just the final training run.
+            decay, no_decay = [], []
+            for p in model.parameters():
+                (no_decay if p.dim() == 1 else decay).append(p)
+
+            optimizer = torch.optim.AdamW(
+                [
+                    {"params": decay, "weight_decay": weight_decay},
+                    {"params": no_decay, "weight_decay": 0.0},
+                ],
+                lr=1.0, betas=(0.9, 0.98), eps=1e-9
             )
             scheduler = CustomWarmupSchedule(
                 optimizer=optimizer,
