@@ -76,7 +76,16 @@ def evaluate_translation_metrics(
     # Needs whitespace-tokenized input, unlike sacrebleu's raw-string metrics above.
     tokenized_hyps = [h.split() for h in hypotheses]
     tokenized_refs = [[r.split()] for r in references]
-    nist_score = corpus_nist(tokenized_refs, tokenized_hyps)
+    try:
+        nist_score = corpus_nist(tokenized_refs, tokenized_hyps)
+    except ZeroDivisionError:
+        # nltk's NIST divides by zero when hypotheses are too short/degenerate
+        # to have any n-grams at some order — realistically only a risk very
+        # early in training (e.g. curriculum stage 1, epoch 1) before the
+        # model produces anything substantive. Fall back rather than crash a
+        # multi-hour run over one progress-check metric.
+        print("[evaluate_translation_metrics] NIST hit a ZeroDivisionError (likely still near-degenerate output) — reporting 0.0 for this check.")
+        nist_score = 0.0
 
     return {
         "bleu": bleu_score,
