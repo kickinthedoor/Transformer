@@ -38,7 +38,7 @@ model:
   num_dec_layers: 6
   d_model: 512
   num_heads: 8
-  dff: 2048
-  max_pe_source: 500
-  max_pe_target: 500
+  # dff is computed from d_model at model-build time (2x, see the notebook's
+  # model-build cell), not set here — keeps it correctly following d_model
+  # even after APPLY_BEST_PARAMS overrides it.
   dropout: 0.1

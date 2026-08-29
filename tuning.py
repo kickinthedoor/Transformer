@@ -69,8 +69,6 @@ def build_objective(train_loader, val_loader, config, device, max_trial_minutes=
                 dff=2 * d_model,
                 src_vocab=trial_config['data']['vocab_size'],
                 tgt_vocab=trial_config['data']['vocab_size'],
-                max_pe_src=trial_config['model']['max_pe_source'],
-                max_pe_tgt=trial_config['model']['max_pe_target'],
                 rate=dropout
             ).to(device)
 

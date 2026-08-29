@@ -1,31 +1,67 @@
 import math
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 
-def get_positional_encoding(max_len: int, d_model: int) -> torch.Tensor:
-    pos_enc = np.array([
-        [pos / np.power(10000, 2.0 * (j // 2) / d_model) for j in range(d_model)]
-        for pos in range(max_len)
-    ])
-    pos_enc[:, 0::2] = np.sin(pos_enc[:, 0::2])
-    pos_enc[:, 1::2] = np.cos(pos_enc[:, 1::2])
-    return torch.from_numpy(pos_enc[np.newaxis, ...]).float()
+class RotaryEmbedding(nn.Module):
+    """Rotary position embedding (RoPE, Su et al. 2021). Rotates query/key
+    vectors by an angle proportional to their position, so the dot product
+    between a rotated q and a rotated k depends only on their relative
+    position (i - j), not their absolute positions. Replaces the sinusoidal
+    absolute positional encoding previously added to the embeddings — no
+    lookup table, no fixed max sequence length, cos/sin are computed fresh
+    for whatever sequence length shows up.
+
+    Only used for self-attention (encoder and decoder). Deliberately not
+    applied to cross-attention: relative distance isn't a meaningful concept
+    between two different sequences (source positions vs. target positions).
+    """
+    def __init__(self, head_dim: int, base: int = 10000):
+        super().__init__()
+        assert head_dim % 2 == 0, "RoPE requires an even head_dim (d_model // num_heads)"
+        inv_freq = 1.0 / (base ** (torch.arange(0, head_dim, 2).float() / head_dim))
+        self.register_buffer("inv_freq", inv_freq, persistent=False)
+
+    def forward(self, seq_len: int, device, dtype):
+        # Position/frequency math stays in float32 regardless of the caller's
+        # dtype (e.g. bfloat16 under autocast) — bf16 can only represent
+        # integers exactly up to 256, and this project has already been bitten
+        # once by a silent precision issue, so this is deliberate, not an
+        # oversight. Only the final cos/sin values (always in [-1, 1], well
+        # within bf16's precision) get cast down.
+        positions = torch.arange(seq_len, device=device, dtype=self.inv_freq.dtype)
+        freqs = torch.outer(positions, self.inv_freq)          # (seq_len, head_dim/2)
+        emb = torch.cat((freqs, freqs), dim=-1)                 # (seq_len, head_dim)
+        return emb.cos().to(dtype), emb.sin().to(dtype)
+
+
+def rotate_half(x):
+    x1, x2 = x.chunk(2, dim=-1)
+    return torch.cat((-x2, x1), dim=-1)
+
+
+def apply_rotary(x, cos, sin):
+    # x: (B, H, S, head_dim); cos/sin: (S, head_dim), broadcast over B and H.
+    return x * cos + rotate_half(x) * sin
+
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, d_model: int, num_heads: int, dropout: float = 0.1):
+    def __init__(self, d_model: int, num_heads: int, dropout: float = 0.1, use_rope: bool = False):
         super().__init__()
         self.num_heads = num_heads
         self.d_model = d_model
         self.depth = d_model // num_heads
         self.dropout = dropout
+        self.use_rope = use_rope
 
         self.wq = nn.Linear(d_model, d_model)
         self.wk = nn.Linear(d_model, d_model)
         self.wv = nn.Linear(d_model, d_model)
         self.fc = nn.Linear(d_model, d_model)
+
+        if use_rope:
+            self.rope = RotaryEmbedding(self.depth)
 
     def split_heads(self, x, batch_size):
         # Transposes from (B, S, H, Depth) to (B, H, S, Depth)
@@ -38,6 +74,13 @@ class MultiHeadAttention(nn.Module):
         q = self.split_heads(self.wq(q), b)
         k = self.split_heads(self.wk(k), b)
         v = self.split_heads(self.wv(v), b)
+
+        if self.use_rope:
+            # Self-attention only (see class docstring), so q and k always
+            # share the same sequence length here.
+            cos, sin = self.rope(q.size(2), device=q.device, dtype=q.dtype)
+            q = apply_rotary(q, cos, sin)
+            k = apply_rotary(k, cos, sin)
 
         # 2. Prepare Mask for SDPA (True = Attend, False = Ignore)
         attn_mask = None
@@ -75,7 +118,7 @@ class MultiHeadAttention(nn.Module):
 class EncoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, dff, rate=0.1):
         super().__init__()
-        self.mha = MultiHeadAttention(d_model, num_heads, dropout=rate)
+        self.mha = MultiHeadAttention(d_model, num_heads, dropout=rate, use_rope=True)
         self.ffn = nn.Sequential(nn.Linear(d_model, dff), nn.ReLU(), nn.Linear(dff, d_model))
         self.norm1 = nn.LayerNorm(d_model, eps=1e-6)
         self.norm2 = nn.LayerNorm(d_model, eps=1e-6)
@@ -97,8 +140,8 @@ class EncoderLayer(nn.Module):
 class DecoderLayer(nn.Module):
     def __init__(self, d_model, num_heads, dff, rate=0.1):
         super().__init__()
-        self.mha1 = MultiHeadAttention(d_model, num_heads, dropout=rate)
-        self.mha2 = MultiHeadAttention(d_model, num_heads, dropout=rate)
+        self.mha1 = MultiHeadAttention(d_model, num_heads, dropout=rate, use_rope=True)   # self-attn
+        self.mha2 = MultiHeadAttention(d_model, num_heads, dropout=rate, use_rope=False)  # cross-attn
         self.ffn = nn.Sequential(nn.Linear(d_model, dff), nn.ReLU(), nn.Linear(dff, d_model))
         self.norm1, self.norm2, self.norm3 = [nn.LayerNorm(d_model, eps=1e-6) for _ in range(3)]
         self.drop1, self.drop2, self.drop3 = [nn.Dropout(rate) for _ in range(3)]
@@ -121,14 +164,11 @@ class DecoderLayer(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, num_enc_layers, num_dec_layers, d_model, num_heads, dff, src_vocab, tgt_vocab, max_pe_src, max_pe_tgt, rate=0.1):
+    def __init__(self, num_enc_layers, num_dec_layers, d_model, num_heads, dff, src_vocab, tgt_vocab, rate=0.1):
         super().__init__()
         self.d_model = d_model
         self.src_emb = nn.Embedding(src_vocab, d_model)
         self.tgt_emb = nn.Embedding(tgt_vocab, d_model)
-
-        self.register_buffer("pe_src", get_positional_encoding(max_pe_src, d_model))
-        self.register_buffer("pe_tgt", get_positional_encoding(max_pe_tgt, d_model))
 
         self.enc_layers = nn.ModuleList([EncoderLayer(d_model, num_heads, dff, rate) for _ in range(num_enc_layers)])
         self.dec_layers = nn.ModuleList([DecoderLayer(d_model, num_heads, dff, rate) for _ in range(num_dec_layers)])
@@ -139,16 +179,16 @@ class Transformer(nn.Module):
         self.final_layer = nn.Linear(d_model, tgt_vocab)
         self.drop = nn.Dropout(rate)
 
-        max_len = max(max_pe_src, max_pe_tgt)
-        causal_mask = torch.triu(
-            torch.ones((max_len, max_len), dtype=torch.bool),
-            diagonal=1
-        ).unsqueeze(0).unsqueeze(0)
-        self.register_buffer("causal_mask", causal_mask)
-
     def forward(self, inp, tar, enc_mask=None, dec_mask=None, return_attention=False):
         batch_size, tar_seq_len = tar.shape
-        c_mask = self.causal_mask[:, :, :tar_seq_len, :tar_seq_len]
+
+        # Built fresh each call instead of sliced from a precomputed buffer —
+        # RoPE dropped the fixed max-sequence-length assumption entirely, so
+        # the causal mask no longer needs one either.
+        c_mask = torch.triu(
+            torch.ones((tar_seq_len, tar_seq_len), dtype=torch.bool, device=tar.device),
+            diagonal=1
+        ).unsqueeze(0).unsqueeze(0)
 
         if dec_mask is not None:
             if dec_mask.size(-1) > tar_seq_len:
@@ -162,9 +202,9 @@ class Transformer(nn.Module):
 
         attention_weights = {} if return_attention else None
 
-        # Encoder Pass
-        e_seq_len = inp.size(1)
-        x_enc = self.drop(self.src_emb(inp) * scale_factor + self.pe_src[:, :e_seq_len, :])
+        # Encoder Pass. No positional encoding added to the embeddings here —
+        # RoPE injects position inside each self-attention layer instead.
+        x_enc = self.drop(self.src_emb(inp) * scale_factor)
         for i, layer in enumerate(self.enc_layers):
             x_enc, w_enc = layer(x_enc, enc_mask, return_attention=return_attention)
             if return_attention:
@@ -172,8 +212,7 @@ class Transformer(nn.Module):
         x_enc = self.encoder_norm(x_enc)
 
         # Decoder Pass
-        d_seq_len = tar_seq_len
-        x_dec = self.drop(self.tgt_emb(tar) * scale_factor + self.pe_tgt[:, :d_seq_len, :])
+        x_dec = self.drop(self.tgt_emb(tar) * scale_factor)
 
         for i, layer in enumerate(self.dec_layers):
             x_dec, w1, w2 = layer(x_dec, x_enc, combined_mask, enc_mask, return_attention=return_attention)
