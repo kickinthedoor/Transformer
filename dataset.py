@@ -1,6 +1,7 @@
+import random
 from typing import Tuple, List
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Sampler
 from torch.nn.utils.rnn import pad_sequence
 
 
@@ -96,6 +97,94 @@ def create_bpe_dropout_dataloader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
+        collate_fn=fast_collate_fn,
+        num_workers=0,
+        pin_memory=pin_memory
+    )
+
+
+class TokenBudgetBatchSampler(Sampler):
+    """Groups dataset indices into batches sized so that batch_size *
+    max_length_in_batch stays under a token budget, instead of a fixed
+    sentence count -- short sentences get packed many-per-batch, long ones
+    few-per-batch, avoiding the padding waste fixed-size batching causes on
+    a length distribution this skewed.
+
+    Batch composition is computed once from `lengths` (sorted, then greedily
+    packed) and stays fixed; only the ORDER batches are presented in gets
+    reshuffled every epoch (a fresh DataLoader iteration re-calls __iter__).
+    This is the standard approach (e.g. fairseq's max-tokens batching) --
+    letting composition vary too would undermine the padding-efficiency
+    benefit the sort exists for in the first place.
+
+    `lengths` should be a stable reference length per example (e.g. from
+    deterministic tokenization), not the possibly-stochastic length BPE
+    dropout produces at training time -- this only decides how examples get
+    grouped, not how they get tokenized when actually fed to the model.
+    """
+    def __init__(self, lengths: List[int], max_tokens: int, shuffle: bool = True):
+        self.shuffle = shuffle
+        self.batches = self._build_batches(lengths, max_tokens)
+
+    @staticmethod
+    def _build_batches(lengths: List[int], max_tokens: int) -> List[List[int]]:
+        order = sorted(range(len(lengths)), key=lambda i: lengths[i])
+        batches = []
+        current, current_max = [], 0
+        for idx in order:
+            length = lengths[idx]
+            candidate_max = max(current_max, length)
+            if current and (len(current) + 1) * candidate_max > max_tokens:
+                batches.append(current)
+                current, current_max = [idx], length
+            else:
+                current.append(idx)
+                current_max = candidate_max
+        if current:
+            batches.append(current)
+        return batches
+
+    def __iter__(self):
+        order = list(range(len(self.batches)))
+        if self.shuffle:
+            random.shuffle(order)
+        for i in order:
+            yield self.batches[i]
+
+    def __len__(self) -> int:
+        return len(self.batches)
+
+
+def create_token_budget_dataloader(
+    lengths: List[int],
+    max_tokens: int,
+    src_tokenizer=None,
+    tgt_tokenizer=None,
+    src_texts: List[str] = None,
+    tgt_texts: List[str] = None,
+    src_encoded: List[List[int]] = None,
+    tgt_encoded: List[List[int]] = None,
+    alpha: float = 0.1,
+    shuffle: bool = True,
+    pin_memory: bool = True
+) -> DataLoader:
+    """Token-budget-batched training dataloader. Pass either
+    (src_texts, tgt_texts, src_tokenizer, tgt_tokenizer) for on-the-fly
+    BPE-dropout tokenization, or (src_encoded, tgt_encoded) for the fixed
+    pre-tokenized path -- the same choice create_bpe_dropout_dataloader /
+    create_single_dataloader represent, just batched by token budget instead
+    of a fixed sentence count. `lengths` must line up index-for-index with
+    whichever pair of inputs is given.
+    """
+    if src_texts is not None:
+        dataset = BPEDropoutDataset(src_texts, tgt_texts, src_tokenizer, tgt_tokenizer, alpha=alpha)
+    else:
+        dataset = WMTDataset(src_encoded, tgt_encoded)
+
+    batch_sampler = TokenBudgetBatchSampler(lengths, max_tokens, shuffle=shuffle)
+    return DataLoader(
+        dataset,
+        batch_sampler=batch_sampler,
         collate_fn=fast_collate_fn,
         num_workers=0,
         pin_memory=pin_memory
