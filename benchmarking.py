@@ -1,3 +1,5 @@
+import gc
+import copy
 import time
 import torch
 
@@ -14,19 +16,24 @@ def benchmark_dataloader(train_loader, num_batches=100):
     return elapsed
 
 
-def benchmark_step_time(model, optimizer, criterion, train_loader, device, warmup_steps=5, timed_steps=20):
+def benchmark_step_time(model, criterion, train_loader, device, warmup_steps=5, timed_steps=20, bench_lr=1e-4):
     """Times pure GPU compute per training step (forward + backward + optimizer step).
 
-    WARNING: this calls loss.backward() and optimizer.step() for real, `timed_steps`
-    times. Pass a disposable copy of your model/optimizer (e.g. via copy.deepcopy),
-    not the objects you intend to actually train — otherwise this benchmark leaves
-    the model's weights measurably shifted before real training begins.
+    Benchmarks a disposable deep copy of `model`, never the model you actually
+    intend to train — loss.backward() and optimizer.step() run for real here,
+    `timed_steps` times, which would otherwise leave your real model's weights
+    measurably shifted before real training even begins. The copy gets its own
+    fresh optimizer rather than a deep-copied one: an optimizer holds
+    references to specific parameter tensors, so deep-copying it alongside the
+    model would leave it bound to disconnected tensors the copy's forward pass
+    never actually touches.
     """
+    bench_model = copy.deepcopy(model).to(device)
+    bench_model.train()
+    bench_optimizer = torch.optim.AdamW(bench_model.parameters(), lr=bench_lr)
+
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
-
-    model.to(device)
-    model.train()
     iterator = iter(train_loader)
 
     def _step():
@@ -37,7 +44,7 @@ def benchmark_step_time(model, optimizer, criterion, train_loader, device, warmu
         mask_tar_inp = mask_tar_inp.to(device, non_blocking=True)
 
         with torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16):
-            preds = model(inp, tar[:, :-1], enc_mask=mask_inp, dec_mask=mask_tar_inp)
+            preds = bench_model(inp, tar[:, :-1], enc_mask=mask_inp, dec_mask=mask_tar_inp)
             if isinstance(preds, tuple):
                 preds = preds[0]
             loss = criterion(preds.reshape(-1, preds.size(-1)), tar[:, 1:].reshape(-1))
@@ -54,8 +61,8 @@ def benchmark_step_time(model, optimizer, criterion, train_loader, device, warmu
     for _ in range(timed_steps):
         loss = _step()
         loss.backward()
-        optimizer.step()
-        optimizer.zero_grad(set_to_none=True)
+        bench_optimizer.step()
+        bench_optimizer.zero_grad(set_to_none=True)
 
     end_event.record()
     torch.cuda.synchronize()
@@ -64,4 +71,9 @@ def benchmark_step_time(model, optimizer, criterion, train_loader, device, warmu
     print(f"\n==========================================")
     print(f"Pure GPU compute time per batch step: {ms_per_step:.2f} ms")
     print(f"==========================================")
+
+    del bench_model, bench_optimizer
+    gc.collect()
+    torch.cuda.empty_cache()
+
     return ms_per_step
