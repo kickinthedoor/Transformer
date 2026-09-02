@@ -9,6 +9,13 @@ This project consists of two stages, which are similar models for the IWSLT17 de
 Even though there was some evidence of multilingual models outperforming bilingual models on the few small datasets, which employed both methods, I generally do not wish to generalize based on such a small sample, with it also being on a different language combination dataset. 
 That being said, I have completed the '17 model, which reached the following results:
 
+The architecture and params for phase1 (IWSLT17) and phase2 (IWSLT14) look as follows:
+
+|               | d_model | enc/dec layers | heads | dropout |   Params   |
+| ------------- |:-------:|:--------------:|:-----:|:-------:|:----------:|
+| Phase 1       | 256     |     3/4        | 4     | 0.101   | 17,951,248 |
+| Phase 2       | 512     |     5/6        | 8     | 0.116   | 44,812,560 |
+
 
 1: Hugging Face provided test set (consisting of test sets 2010-2015)
 
