@@ -16,6 +16,7 @@ The architecture and params for phase1 (IWSLT17) and phase2 (IWSLT14) look as fo
 | Phase 1       | 256     |     3/4        | 4     | 0.101   | 17,951,248 |
 | Phase 2       | 512     |     5/6        | 8     | 0.116   | 44,812,560 |
 
+## Phase 1
 
 1: Hugging Face provided test set (consisting of test sets 2010-2015)
 
@@ -69,6 +70,31 @@ Criticisms:
 - Longer sequences can probably be improved by using relative positional encoding as well as seq-length curriculum. Will be applied for the '14 set.
 - Weight decay flattened encoder attention weights to 0, which was corrected by the finetuning, will be taken into account on the '14 set.
 - The lower evaluation for the '17 set seems to point at a more difficult test set. To not waste time comparing apples to oranges, I move on to phase 2, which is the directly comparable IWSLT14 de-en, with the planned improvements.
+
+## Phase 2
+
+1: On the official test set for the IWSLT14 de-en, the results were as follows:
+
+- SacreBLEU Score: 32.12
+- chrF Score:      55.55
+- TER Score:       54.13
+- NIST Score:      7.5909
+
+Generated Sample Comparison
+```
+Predicted: You know, one of the great pleasures in travel and one of the joys of ethnographic research is to share with the people who can still remember the old days, who still feel their past, touch them on the wind, touch them on the rainfound rocks, taste them in the bitter leaves of the plants.
+Reference: You know, one of the intense pleasures of travel and one of the delights of ethnographic research is the opportunity to live amongst those who have not forgotten the old ways, who still feel their past in the wind, touch it in stones polished by rain, taste it in the bitter leaves of plants.
+
+Predicted: Just knowing that Jaguar shamans still go beyond the Milky Way or the meaning of the myths? First of all, in the Himalayas still matter, or that the Buddhists are still following the breath of the dharma, is to call the central epiphany of anthropology, which is the idea that the world in which we live, not in an absolute sense, exists, but only as a model of reality, as
+Reference: Just to know that Jaguar shamans still journey beyond the Milky Way, or the myths of the Inuit elders still resonate with meaning, or that in the Himalaya, the Buddhists still pursue the breath of the Dharma, is to really remember the central revelation of anthropology, and that is the idea that the world in which we live does not exist in some absolute sense, but is just one model of reality, the consequence of one particular set of adaptive choices that our lineage made, albeit successfully, many generations ago.
+
+Predicted: And of course, we all share the same adaptations.
+Reference: And of course, we all share the same adaptive imperatives.
+```
+
+Test Loss: 3.0217 (PPL: 20.53)
+
+2: For reference, Wu et al. (2019, ICLR) report 34.4 BLEU for a standard Transformer baseline on this exact benchmark (IWSLT14 De-En, beam search width 4) - a ~2.3 point gap from this project's 32.12.
 
 ## How to run it
 
