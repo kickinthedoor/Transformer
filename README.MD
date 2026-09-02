@@ -69,7 +69,7 @@ Criticisms:
 - No directly comparable benchmarks. 
 - Longer sequences can probably be improved by using relative positional encoding as well as seq-length curriculum. Will be applied for the '14 set.
 - Weight decay flattened encoder attention weights to 0, which was corrected by the finetuning, will be taken into account on the '14 set.
-- The lower evaluation for the '17 set seems to point at a more difficult test set. To not waste time comparing apples to oranges, I move on to phase 2, which is the directly comparable IWSLT14 de-en, with the planned improvements.
+- The lower evaluation for the '17 set seems to point at a more difficult test set. To not waste time comparing apples to oranges, phase 2 moves to the directly comparable IWSLT14 de-en, with the improvements below applied.
 
 ## Phase 2
 
@@ -96,6 +96,11 @@ Test Loss: 3.0217 (PPL: 20.53)
 
 2: For reference, Wu et al. (2019, ICLR) report 34.4 BLEU for a standard Transformer baseline on this exact benchmark (IWSLT14 De-En, beam search width 4) - a ~2.3 point gap from this project's 32.12.
 
+Criticisms:
+
+- Joint (shared) source/target BPE vocabulary, as used in the original recipe, wasn't adopted - kept the existing per-language SentencePiece pipeline instead. Doesn't affect comparability of the final score, but is a plausible place to close some of the remaining gap.
+- Validation loss and BLEU had clearly plateaued by the final epochs, a reasonable stopping point - but the ~2.3 point gap to the literature reference isn't fully attributable to any single, confirmed cause beyond ruling out data leakage, dataset difficulty, and model capacity as explanations.
+
 # How to run it
 
 This project assumes an NVIDIA GPU with CUDA — `config.yaml` defaults to `cuda` and the codebase is written around it throughout (no CPU fallback).
@@ -118,11 +123,11 @@ This project assumes an NVIDIA GPU with CUDA — `config.yaml` defaults to `cuda
    pip install -r requirements.txt
    ```
 
-4. Open `experiment.ipynb` (VS Code or Jupyter) and run the cells top to bottom.
-   - The first run downloads the IWSLT17 de-en dataset via Hugging Face `datasets`, trains SentencePiece tokenizers, and tokenizes/caches everything to `data/`, `models/`, and `cache/`. These are all gitignored and get regenerated locally on first run. Every run after that reuses the cache automatically — `RESET_DATASET` is `False` by default, and only needs setting to `True` if you want to force a full rebuild (e.g. after changing vocab size).
-   - Hyperparameter tuning (`RUN_TUNING`) is off by default, since the tuned architecture is already saved in `best_params_10k_vocab.json` and gets applied automatically. Set it to `True` to re-run the Optuna search from scratch.
-   - Experiment tracking uses Weights & Biases and expects you to be logged in (`wandb login`). Set `wandb_mode: "offline"` in `config.yaml` to skip network calls entirely if you'd rather not.
-   - A full training run takes several hours on a single consumer GPU. The notebook checkpoints after every epoch that improves validation loss, and is structured to resume across sessions via the `RESUME_FROM_CHECKPOINT` cells rather than requiring one uninterrupted run.
+4. Open `phase2_iwslt14.ipynb` (VS Code or Jupyter) and run the cells top to bottom - this is the current, actively-developed notebook. `phase1_iwslt17.ipynb` is preserved as a frozen historical record (also permanently retrievable at git tag `v1-iwslt17`) and generally shouldn't need re-running; it follows the same pattern below, just against `config.yaml` and `best_params_10k_vocab.json` instead.
+   - The first run downloads the IWSLT14 de-en dataset, trains SentencePiece tokenizers, and tokenizes/caches everything to `data_iwslt14/`, `models_iwslt14/`, and `cache_iwslt14/`. These are all gitignored and get regenerated locally on first run. Every run after that reuses the cache automatically — `RESET_DATASET` is `False` by default, and only needs setting to `True` if you want to force a full rebuild (e.g. after changing vocab size).
+   - Hyperparameter tuning (`RUN_TUNING`) is off by default, since the tuned architecture is already saved in `best_params_iwslt14.json` and gets applied automatically. Set it to `True` to re-run the Optuna search from scratch.
+   - Experiment tracking uses Weights & Biases and expects you to be logged in (`wandb login`). Set `wandb_mode: "offline"` in `config_iwslt14.yaml` to skip network calls entirely if you'd rather not.
+   - A full training run takes several hours on a single consumer GPU. The notebook checkpoints after every epoch that improves validation loss, and is structured to resume across sessions via the resume-from-checkpoint cell rather than requiring one uninterrupted run.
 
 # Process of creating it
 
@@ -148,6 +153,26 @@ Pre encoder attention                  |  Post encoder attention
 **Infrastructure.** Checkpointing captures model, optimizer, scheduler, and step state together, enabling training to be resumed incrementally across multiple sessions rather than requiring one uninterrupted run. An early, large `utils.py` was split into focused, single-purpose modules, and notebook sections were made flag-gated (toggle a boolean to skip or run a given block) for easier iteration.
 
 The overall arc - from chasing GPU slowdowns, through a model that flatly refused to learn at all, to a subtler bug that only surfaced by visualizing attention directly - is, on its own, as much a demonstration of debugging process as the final BLEU numbers are of translation quality.
+
+## Phase 2
+
+**Data pipeline.** Rather than pulling IWSLT14 de-en from a random third-party dataset upload, the raw data is downloaded and processed by replicating fairseq's own `prepare-iwslt14.sh` recipe exactly - same source archive, same tag cleaning, same length/ratio filtering, same train/valid/test split logic - specifically so the resulting split is the one virtually every published IWSLT14 de-en benchmark number is actually computed against, rather than a differently-composed lookalike. Building it surfaced a real alignment bug: dropping blank lines independently per language (after stripping TED-talk XML tags) desynced the German and English files by a few lines partway through, cascading into roughly two-thirds of the corpus failing the length filter on mismatched pairs. Fixed by keeping every line regardless of whether it goes blank after detagging, matching what the original script does. Verified end to end against the known reference split sizes: 159,199 train / 7,236 valid / 6,750 test - the test count matches the literature exactly. One deliberate deviation from the original recipe: this project's existing SentencePiece BPE pipeline is used instead of the original's Moses tokenizer + `subword-nmt`. This doesn't affect comparability, since sacreBLEU scores on detokenized text regardless of a model's internal subword scheme.
+
+**Tuning, fixed to actually mirror final training.** Phase 1's tuning already had one instance of trials not matching the final run's setup; phase 2's tuning code had the same problem in a new place - it was still using plain `Adam` with weight decay applied to every parameter, the exact pattern that had silently collapsed encoder self-attention before. Fixed to AdamW with weight decay excluded from 1D parameters, matching the fix already applied to final training. The architecture search space was also narrowed (encoder/decoder layers 4-6 instead of 2-6, since 2-3 layers is unlikely to be competitive at this scale, and narrowing the range gets more signal out of a fixed trial budget) and `dff` was fixed to 2x `d_model` instead of the WMT-scale 4x convention, matching the literature's `transformer_iwslt_de_en` reference architecture. Touching the model-build cell for this surfaced a second latent bug, present since phase 1 and never noticed: `dff` was read as a static config value that applying tuned hyperparameters never updated, so a tuned `d_model` and a stale `dff` could silently drift out of the intended ratio. Fixed to compute `dff` from whichever `d_model` actually ends up used.
+
+**Relative positional encoding (RoPE).** Replaces the absolute sinusoidal positional encoding used in phase 1. Rotates query/key vectors by an angle proportional to position, so the dot product between a rotated query and a rotated key depends only on their relative distance rather than their absolute positions - verified directly rather than assumed, by checking that the dot product is identical for pairs at the same relative distance regardless of their absolute position, and different at a different distance. Applied to encoder and decoder self-attention only; deliberately excluded from cross-attention, since relative distance isn't a coherent concept between two different sequences (source positions and target positions aren't "N apart" in any meaningful sense).
+
+**Sequence-length curriculum.** Training runs as four stages of increasing maximum sentence length rather than one pass over the full length distribution from the start: 20 tokens for 3 epochs, 40 for 4, 80 for 5, then uncapped for 8, totaling 20 epochs. Thresholds are grounded in the real token-length distribution of the training data (p50=22, p75=34, p90=49, p95=61, p99=89 tokens), so each stage's cutoff corresponds to an actual, checked percentage of the corpus rather than a round number picked by feel. No changes to the training loop itself were needed - the curriculum is just several calls to the existing fit loop, each with a differently-filtered dataloader, chaining epoch numbering and checkpoint tracking exactly the way resuming from a checkpoint already did.
+
+![Training and validation loss across the sequence-length curriculum](Images/train_val_loss_curriculum.png)
+
+**Token-budget batching.** Fixed-sentence-count batches (the same 64 sentences per batch regardless of length) waste compute padding short sequences up to whatever the longest sentence in that batch happens to be. Replaced with a batch sampler that sorts examples by length and packs them so that batch size times max length in the batch stays under a token budget instead - short sentences end up many-per-batch, long ones few-per-batch. Verified against the real training data: zero token-budget violations, no lost or duplicated examples across batches, and batch order genuinely reshuffles each epoch while composition stays fixed (the standard approach, since composition varying too would undermine the padding-efficiency the length-sort exists for).
+
+**The investigation.** After a full training run, the test-set BLEU score looked implausibly high next to the BLEU tracked during training's per-epoch progress checks - a large enough gap to be worth investigating rather than accepting. Ruled out data leakage first: only 1.3% of test sentences appear verbatim in training data, and those are generic phrases ("vielen dank," "nun, was bedeutet das?") that recur across independent talks by coincidence, nowhere near enough to explain the gap. Ruled out the test set simply being easier next: validation and test length distributions are nearly identical. The real cause turned up by loading the actual trained checkpoint and comparing decoding methods directly: greedy decoding - used for the fast per-epoch check - fails to terminate on 82% of longer validation sentences, hitting the generation length cap without ever producing an end-of-sequence token, versus beam search's 22% on the exact same sentences. The two numbers being tracked throughout training were never decoded the same way to begin with. Raising the generation length cap for final evaluation confirmed the diagnosis directly: test BLEU rose from 29.25 to 31.30 once sentences were no longer being cut off mid-translation. A decoding-independent cross-check (teacher-forced test loss compared against validation loss) and a controlled one-off beam-search pass over a validation sample then let the original gap be decomposed cleanly into two separately-verified pieces: +14.84 from decoding method alone (greedy versus beam, same data), minus 2.34 from a genuine but modest dataset difference (beam versus beam, validation versus test) - together accounting for almost exactly the gap that started the investigation.
+
+![BLEU score vs. source sequence length, beam search](Images/checkpoint2_beam_bleu_vs_length.png)
+
+**Result.** 32.12 SacreBLEU on the actual canonical IWSLT14 de-en test set, beam search, generation cap raised to account for the investigation above - about 2.3 points off the 34.4 BLEU literature reference (Wu et al., 2019), using a model that is itself larger than that reference architecture, which rules out undersized capacity as an explanation for the remaining gap. Validation loss and BLEU had clearly plateaued by the final training epochs, a reasonable stopping point rather than a sign of time running out.
 
 # Future considerations
 
