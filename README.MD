@@ -1,4 +1,4 @@
-## What is this project
+# What is this project
 
 During my masters I was very fond of the transformer model I learned of during my Deep Learning course. My thesis ended up being about using an LLM (GPT-4 based ChatGPT) to learn about Machine Learning concepts, more specifically, Transformers. Ironically, this project also serves as a platform for me to learn agentic coding.
 Now, I wanted to improve my model, a machine translation transformer, as it was severly lacking in multiple aspects. One of the most important things to focus on was using benchmark datasets with comparable results, which I should have already used previously. 
@@ -96,7 +96,7 @@ Test Loss: 3.0217 (PPL: 20.53)
 
 2: For reference, Wu et al. (2019, ICLR) report 34.4 BLEU for a standard Transformer baseline on this exact benchmark (IWSLT14 De-En, beam search width 4) - a ~2.3 point gap from this project's 32.12.
 
-## How to run it
+# How to run it
 
 This project assumes an NVIDIA GPU with CUDA — `config.yaml` defaults to `cuda` and the codebase is written around it throughout (no CPU fallback).
 
@@ -124,7 +124,7 @@ This project assumes an NVIDIA GPU with CUDA — `config.yaml` defaults to `cuda
    - Experiment tracking uses Weights & Biases and expects you to be logged in (`wandb login`). Set `wandb_mode: "offline"` in `config.yaml` to skip network calls entirely if you'd rather not.
    - A full training run takes several hours on a single consumer GPU. The notebook checkpoints after every epoch that improves validation loss, and is structured to resume across sessions via the `RESUME_FROM_CHECKPOINT` cells rather than requiring one uninterrupted run.
 
-## Process of creating it
+# Process of creating it
 
 **Data pipeline.** IWSLT17 de-en TED talk transcripts are pulled via Hugging Face `datasets`, split into train/validation/test, cleaned, and tokenized with a SentencePiece BPE tokenizer; results are cached to disk so reruns skip re-downloading and re-tokenizing. Vocabulary size was reduced from an initial 32k down to 10k, matching typical IWSLT-scale convention and cutting embedding/output overfitting capacity. During training, subword segmentation is sampled on the fly (BPE dropout) rather than fixed, so the same sentence can tokenize differently across steps, which improves robustness to segmentation choice. Flash Attention is explicitly disabled on this Windows/CUDA setup to avoid a build-compatibility warning (safe to re-enable on Linux).
 
@@ -137,6 +137,10 @@ This project assumes an NVIDIA GPU with CUDA — `config.yaml` defaults to `cuda
 - Weights & Biases logging was fully wired up but never actually connected to the trainer, so an entire run's metrics silently went nowhere.
 - **The most interesting one:** weight decay applied uniformly to every parameter - including projections that receive a genuinely weak gradient from the loss — caused the encoder's self-attention query/key weights to decay all the way to zero over the course of training. Invisible in the loss curve, but obvious the moment attention weights were actually visualized: the encoder had silently collapsed into uniformly averaging its input instead of attending to anything at all. Because query and key were both exactly zero, the gradient at that point was also exactly zero - a genuine fixed point that no amount of further training could escape on its own. Fixed with a short encoder-only fine-tune: re-initializing the collapsed weights to break the fixed point, and switching to AdamW with weight decay excluded from 1D parameters (biases, LayerNorm gains) so it can't happen again.
 
+Pre encoder attention                  |  Post encoder attention
+:-------------------------------------:|:-----------------------------------------:
+![pre](Images/phase1_encoder_pre.png)  |  ![post](Images/phase1_encoder_post.png)
+
 **Performance work.** A `.detach().cpu()` call inside every decoder layer's forward pass - triggered whenever attention weights were requested - forced a GPU→CPU sync on every layer, and was the single biggest early slowdown. One mysterious ~70% epoch-time regression that survived several rounds of debugging turned out to be GPU contention from watching videos on the side, not a code issue at all - a good reminder to rule out external causes before digging deeper. A step-timing benchmark was, for a while, running real backward passes and optimizer steps directly on the model about to be trained, nudging its weights before training even started; fixed by benchmarking a disposable copy instead.
 
 **Evaluation methodology.** Greedy decoding was replaced with beam search for final quality reporting, after greedy decoding was found to produce degenerate repetition loops that understated real translation quality. Final benchmark reporting was switched from the validation set (also used for checkpoint selection, and so mildly optimistically biased) to a genuinely held-out test set. An explicit "reload best checkpoint" step was added before evaluation, since the trainer otherwise leaves the model holding the last epoch's weights rather than the best one.
@@ -145,7 +149,7 @@ This project assumes an NVIDIA GPU with CUDA — `config.yaml` defaults to `cuda
 
 The overall arc - from chasing GPU slowdowns, through a model that flatly refused to learn at all, to a subtler bug that only surfaced by visualizing attention directly - is, on its own, as much a demonstration of debugging process as the final BLEU numbers are of translation quality.
 
-## Future considerations
+# Future considerations
 
 - Cloud usage for tuning, training and testing
 - Vocab size changes
