@@ -149,37 +149,66 @@ def evaluate_on_official_iwslt17(
     }
 
 
-def plot_bleu_vs_length(model, dataloader, tgt_tokenizer, device, max_len=50, num_bins=5):
+def plot_bleu_vs_length(
+    model, dataloader, tgt_tokenizer, device, max_len=50, num_bins=5,
+    use_beam_search=False, beam_size=4, alpha=0.6, src_tokenizer=None
+):
     """
-    Evaluates generated translations and plots BLEU scores binned by source sequence length.
+    Evaluates generated translations and plots BLEU scores binned by source
+    sequence length.
+
+    use_beam_search=True decodes with beam search instead of greedy. This is
+    much slower (beam search decodes one sentence at a time, no cross-sentence
+    batching, same limitation as evaluate_translation_metrics's beam path) --
+    pass a dataloader over a sampled subset rather than the full set when
+    using it; a few hundred sentences is plenty for a stable per-bin BLEU.
+    Requires src_tokenizer (to decode source ids back to text for
+    translate_sentence_beam_search); unused for the greedy path.
     """
     model.eval()
     results = []
 
-    with torch.no_grad():
-        for (inp, mask_inp), (tar, _) in dataloader:
-            inp, mask_inp = inp.to(device), mask_inp.to(device)
-            batch_sz = inp.size(0)
+    if use_beam_search:
+        if src_tokenizer is None:
+            raise ValueError("src_tokenizer is required when use_beam_search=True")
+        with torch.no_grad():
+            for (inp, _), (tar, _) in dataloader:
+                inp = inp.to(device)
+                batch_sz = inp.size(0)
+                for b in range(batch_sz):
+                    src_len = (inp[b] != 0).sum().item()
+                    src_text = src_tokenizer.decode(inp[b].tolist())
+                    hyp_str = translate_sentence_beam_search(
+                        model, src_text, src_tokenizer, tgt_tokenizer, device,
+                        beam_size=beam_size, alpha=alpha, max_len=max_len
+                    )
+                    ref_str = tgt_tokenizer.decode(tar[b].tolist())
+                    results.append({"src_len": src_len, "hyp": hyp_str, "ref": ref_str})
+    else:
+        with torch.no_grad():
+            for (inp, mask_inp), (tar, _) in dataloader:
+                inp, mask_inp = inp.to(device), mask_inp.to(device)
+                batch_sz = inp.size(0)
 
-            ys = torch.full((batch_sz, 1), tgt_tokenizer.sos_id, dtype=torch.long, device=device)
-            for _ in range(max_len):
-                dec_pad = (ys == 0).unsqueeze(1).unsqueeze(2).float()
+                ys = torch.full((batch_sz, 1), tgt_tokenizer.sos_id, dtype=torch.long, device=device)
+                for _ in range(max_len):
+                    dec_pad = (ys == 0).unsqueeze(1).unsqueeze(2).float()
 
-                out = model(inp, ys, mask_inp, dec_pad)
-                next_word = torch.argmax(out[:, -1, :], dim=-1, keepdim=True)
-                ys = torch.cat([ys, next_word], dim=1)
+                    out = model(inp, ys, mask_inp, dec_pad)
+                    next_word = torch.argmax(out[:, -1, :], dim=-1, keepdim=True)
+                    ys = torch.cat([ys, next_word], dim=1)
 
-                if (ys == tgt_tokenizer.eos_id).any(dim=1).all():
-                    break
+                    if (ys == tgt_tokenizer.eos_id).any(dim=1).all():
+                        break
 
-            for b in range(batch_sz):
-                # Measure true source length without padding
-                src_len = (inp[b] != 0).sum().item()
+                for b in range(batch_sz):
+                    # Measure true source length without padding
+                    src_len = (inp[b] != 0).sum().item()
 
-                hyp_str = tgt_tokenizer.decode(ys[b].tolist())
-                ref_str = tgt_tokenizer.decode(tar[b].tolist())
+                    hyp_str = tgt_tokenizer.decode(ys[b].tolist())
+                    ref_str = tgt_tokenizer.decode(tar[b].tolist())
 
-                results.append({"src_len": src_len, "hyp": hyp_str, "ref": ref_str})
+                    results.append({"src_len": src_len, "hyp": hyp_str, "ref": ref_str})
 
     # Sort results by sequence length and group into equal-sized bins
     results.sort(key=lambda x: x["src_len"])
@@ -201,11 +230,15 @@ def plot_bleu_vs_length(model, dataloader, tgt_tokenizer, device, max_len=50, nu
         bin_bleus.append(score)
 
     # Plot BLEU vs Length
+    decoding_label = "Beam Search" if use_beam_search else "Greedy"
     plt.figure(figsize=(8, 5))
     plt.plot(bin_centers, bin_bleus, marker='o', linewidth=2, color='b')
     plt.xlabel("Average Source Sequence Length (Tokens)")
     plt.ylabel("SacreBLEU Score")
-    plt.title("BLEU Score Degradation Across Sequence Lengths")
+    # Neutral title -- not "Degradation": this project's own data has shown
+    # BLEU can rise with length rather than fall, so the title shouldn't
+    # presume a direction before the plot shows one.
+    plt.title(f"BLEU Score vs. Source Sequence Length ({decoding_label})")
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.tight_layout()
     plt.show()

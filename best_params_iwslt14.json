@@ -1,0 +1,13 @@
+{
+  "study_name": "transformer_tuning_iwslt14",
+  "best_value": 3.3577438049149095,
+  "best_params": {
+    "d_model": 512,
+    "nhead": 8,
+    "num_encoder_layers": 5,
+    "num_decoder_layers": 6,
+    "dropout": 0.11630150706337157,
+    "weight_decay": 0.0001720515681267549
+  },
+  "best_trial_number": 32
+}

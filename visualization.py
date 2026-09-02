@@ -89,7 +89,7 @@ def plot_attention(
         ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', fontsize=9)
         ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=9)
 
-        plt.title(f"{TITLE_MAP[attn_type]} Matrix (Layer {actual_layer}, Head {head_idx})", fontsize=12, pad=12)
+        plt.title(f"{TITLE_MAP[attn_type]} Matrix (Layer {actual_layer}, Head {head_idx + 1})", fontsize=12, pad=12)
         plt.tight_layout()
 
         if save_path:
